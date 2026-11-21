@@ -1,0 +1,54 @@
+# This repository is public. Everything in the first block is private and must never be committed.
+
+# --- Private material ---
+# Raw research working notes (kept local)
+research_notes/
+
+# Local configuration and identifiers (Apple team, bundle prefix, Azure client or tenant, OneDrive links)
+*.local.xcconfig
+Local.xcconfig
+*.local.json
+*.local.plist
+.env
+.env.*
+!.env.example
+private/
+
+# Signing, pairing and credentials
+*.mobiledevicepairing
+*.mobileprovision
+*.provisionprofile
+*.p12
+*.cer
+*.pem
+*.key
+
+# Personal data: photos, labels, embeddings, trained weights, device logs
+data/
+exports/
+diagnostics/
+*.sqlite
+*.sqlite-*
+*.db
+
+# Model files are downloaded, never committed
+*.mlpackage/
+*.mlmodelc/
+*.mlmodel
+
+# --- Build outputs ---
+*.ipa
+*.xcarchive
+build/
+DerivedData/
+.build/
+.swiftpm/
+xcuserdata/
+*.xcuserstate
+# The Xcode project is generated from a text definition
+*.xcodeproj/
+
+# --- OS and tools ---
+.DS_Store
+Thumbs.db
+.claude/settings.local.json

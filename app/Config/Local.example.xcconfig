@@ -1,0 +1,4 @@
+// Copy to Local.xcconfig (gitignored) when building and signing from Xcode on a Mac.
+// Never commit the real file: the team ID identifies an Apple Account.
+DEVELOPMENT_TEAM = XXXXXXXXXX
+CODE_SIGN_STYLE = Automatic

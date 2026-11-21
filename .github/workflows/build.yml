@@ -1,0 +1,124 @@
+name: Build
+
+# Compiles the app without signing it. This repository is public, so the workflow
+# uses no secrets and the resulting .ipa must never contain private values.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "reports/**"
+      - "**/*.md"
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "reports/**"
+      - "**/*.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Unit tests
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Test core package
+        run: swift test --package-path ShortlistCore
+
+  ipa:
+    name: Unsigned ipa
+    needs: test
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate --spec app/project.yml
+
+      - name: Build without signing
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project app/Shortlist.xcodeproj \
+            -scheme Shortlist \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            | xcbeautify
+
+      - name: Package ipa
+        run: |
+          set -euo pipefail
+          app="build/DerivedData/Build/Products/Release-iphoneos/Shortlist.app"
+          test -f "$app/Shortlist"
+          mkdir -p build/Payload
+          cp -R "$app" build/Payload/
+          # Ad-hoc signature so the binary carries its entitlements. The sideloading
+          # tool replaces this signature with a real one on the phone.
+          codesign --force --sign - --entitlements app/Shortlist.entitlements build/Payload/Shortlist.app
+          (cd build && zip -qry Shortlist.ipa Payload)
+
+      - name: Check ipa contents
+        run: |
+          set -euo pipefail
+          plutil -p build/Payload/Shortlist.app/Info.plist | grep -E 'CFBundle(Identifier|ShortVersionString|Version)|MinimumOSVersion'
+          codesign -dv build/Payload/Shortlist.app 2>&1 | grep -E 'Identifier|Signature'
+          if [ -e build/Payload/Shortlist.app/embedded.mobileprovision ]; then
+            echo "A provisioning profile must not be shipped in the public build" >&2
+            exit 1
+          fi
+          ls -lh build/Shortlist.ipa
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Shortlist-ipa
+          path: build/Shortlist.ipa
+          if-no-files-found: error
+
+  release:
+    name: Publish latest build
+    # Keeps one rolling release so the phone can install from a fixed URL:
+    # https://github.com/<owner>/<repo>/releases/download/latest-build/Shortlist.ipa
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: ipa
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: Shortlist-ipa
+          path: dist
+
+      - name: Replace rolling release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release delete latest-build --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create latest-build dist/Shortlist.ipa \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Latest build (#$GITHUB_RUN_NUMBER)" \
+            --notes "Unsigned build from commit $GITHUB_SHA. Install with a sideloading tool; it is signed on the device." \
+            --prerelease
