@@ -23,10 +23,20 @@ struct StatusView: View {
                     }
                 }
 
+                Section("Build") {
+                    LabeledContent("Channel", value: status.build.channel)
+                    LabeledContent("Version", value: "\(status.appVersion) (\(status.buildNumber))")
+                    if !status.build.commit.isEmpty {
+                        LabeledContent("Commit", value: status.build.shortCommit)
+                    }
+                    if !status.build.branch.isEmpty {
+                        LabeledContent("Branch", value: status.build.branch)
+                    }
+                }
+
                 Section("Install") {
                     LabeledContent("First opened", value: status.firstOpened.map(Self.format) ?? "now")
                     LabeledContent("Times opened", value: String(status.openCount))
-                    LabeledContent("Version", value: "\(status.appVersion) (\(status.buildNumber))")
                     LabeledContent("Bundle ID", value: status.bundleIdentifier)
                     LabeledContent("iOS", value: status.systemVersion)
                 }

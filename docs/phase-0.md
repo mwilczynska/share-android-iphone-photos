@@ -3,29 +3,57 @@
 Phase 0 answers three questions before the real app is built. See [iphone-app-plan.md](iphone-app-plan.md) for the
 design. Record results in the tables at the end of each section; keep account names, IDs and links out of this file.
 
-Status: the code below has not yet been compiled or run. The first GitHub build is the first compile.
+Status: the app compiles and its unit tests pass in GitHub's build. It has not yet been installed on a phone.
 
 ## 0a. Can a free-signed app stay alive on the phone?
 
 **What exists**
 - `app/`: a one-screen app that shows when its signature expires, how often it has been opened, and the iOS version.
 - `ShortlistCore/`: the logic that reads the expiry date, with unit tests.
-- `.github/workflows/build.yml`: tests, builds an unsigned `.ipa`, and on `main` publishes it as a rolling release.
+- `.github/workflows/build.yml`: tests, builds an unsigned `.ipa`, and publishes it to one of two channels.
+
+**Build channels**
+
+| Channel | Built from | Release page |
+| --- | --- | --- |
+| `test` | Every push to a branch other than `main` | `releases/tag/test-build` |
+| `latest` | Every push to `main` | `releases/tag/latest-build` |
+
+Each release holds `Shortlist.ipa` and `source.json` at fixed addresses:
+`https://github.com/<owner>/<repo>/releases/download/<channel>-build/<file>`. A newer push to the same channel
+replaces them. Both channels install the same app, so installing one replaces the other and keeps the app's data.
+The app's screen shows which channel, commit and branch are installed.
 
 **Steps**
 1. Push to GitHub and wait for the Build workflow to pass.
-2. After a build on `main`, the install file is at
-   `https://github.com/<owner>/<repo>/releases/download/latest-build/Shortlist.ipa`.
-3. On the Windows laptop, install iTunes from Apple's website (not the Store version), then run
+2. On the Windows laptop, install iTunes from Apple's website (not the Store version), then run
    [iloader](https://github.com/nab138/iloader) with the iPhone connected by USB to install SideStore.
-4. On the iPhone: trust the developer profile, turn on Developer Mode, install LocalDevVPN and connect it.
-5. Open SideStore, sign in with the Apple Account chosen for signing, and refresh SideStore itself.
-6. In Safari on the iPhone, open `sidestore://install?url=<the release URL above>`.
-7. Open Shortlist. Note the expiry date and the iOS version it shows.
+3. On the iPhone: trust the developer profile, turn on Developer Mode, install LocalDevVPN and connect it.
+4. Open SideStore and sign in with the Apple Account chosen for signing, and refresh SideStore itself.
+5. Add the test channel once by opening this in Safari on the iPhone:
+   `sidestore://source?url=https://github.com/<owner>/<repo>/releases/download/test-build/source.json`.
+   Install Shortlist from that source in SideStore.
+6. If adding the source fails, install directly instead:
+   `sidestore://install?url=https://github.com/<owner>/<repo>/releases/download/test-build/Shortlist.ipa`.
+7. Open Shortlist. Note the expiry date, channel, commit and the iOS version it shows.
 8. In the Shortcuts app, add a daily automation that runs SideStore's "Refresh All Apps" at a time when the phone is
    normally unlocked and on Wi-Fi.
 9. Check the app every few days for two weeks. "Last signed" should move forward and "Times opened" should keep
    counting up.
+
+**Installing a new version while iterating**
+- Over the air: push to the branch, wait for the build (about 5 to 10 minutes), then in SideStore pull to refresh
+  the source and tap Update. The phone needs Wi-Fi and LocalDevVPN connected. Each install restarts the 7-day clock.
+- By cable: run `.\scripts\get-build.ps1` on the laptop (or `-Channel latest`), connect the phone, and open the
+  downloaded file in iloader or Sideloadly. This works even when SideStore's own sign-in is failing.
+- A manual run from the Actions tab (Build, "Run workflow", pick a branch) republishes that branch without a new
+  commit.
+
+**Unverified**
+- Whether SideStore follows GitHub's redirect from a release download address to the file. If adding the source
+  fails, try the direct install link, then the cable route.
+- Whether SideStore matches the source's bundle identifier to the installed app after it appends its team ID. If
+  updates never appear, use the direct install link for each build.
 
 **Known problems on 21 November 2026**
 - SideStore sign-in has been returning HTTP 503 since 20 November (open issues, no fix announced).
@@ -42,6 +70,8 @@ Status: the code below has not yet been compiled or run. The first GitHub build 
 | Refreshed without a computer, second week | |
 | Data kept across a refresh | |
 | Data kept across an app update | |
+| Adding the source in SideStore works | |
+| New builds appear as updates in SideStore | |
 
 ## 0b. Can a script upload to OneDrive with a folder-limited token?
 

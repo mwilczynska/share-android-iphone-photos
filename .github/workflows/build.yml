@@ -1,16 +1,19 @@
 name: Build
 
-# Compiles the app without signing it. This repository is public, so the workflow
-# uses no secrets and the resulting .ipa must never contain private values.
+# Compiles the app without signing it and publishes it for sideloading.
+# This repository is public, so the workflow uses no secrets and the resulting
+# .ipa must never contain private values.
+#
+# Channels:
+#   latest  pushes to main          -> release tag "latest-build"
+#   test    pushes to any other branch, or a manual run from one -> release tag "test-build"
+# Each release holds Shortlist.ipa and source.json, at fixed URLs:
+#   https://github.com/<owner>/<repo>/releases/download/<channel>-build/Shortlist.ipa
+#   https://github.com/<owner>/<repo>/releases/download/<channel>-build/source.json
 
 on:
   push:
-    branches: [main]
-    paths-ignore:
-      - "docs/**"
-      - "reports/**"
-      - "**/*.md"
-  pull_request:
+    branches: ["**"]
     paths-ignore:
       - "docs/**"
       - "reports/**"
@@ -39,12 +42,37 @@ jobs:
       - name: Test core package
         run: swift test --package-path ShortlistCore
 
+      - name: Test build scripts
+        run: python3 -m unittest discover -s scripts -v
+
   ipa:
     name: Unsigned ipa
     needs: test
     runs-on: macos-26
+    outputs:
+      channel: ${{ steps.channel.outputs.channel }}
     steps:
       - uses: actions/checkout@v7
+
+      - name: Choose channel
+        id: channel
+        run: |
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then channel=latest; else channel=test; fi
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "Channel: $channel"
+
+      - name: Record build info
+        env:
+          CHANNEL: ${{ steps.channel.outputs.channel }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          python3 - <<'EOF'
+          import json, os
+          info = {"channel": os.environ["CHANNEL"], "commit": os.environ["GITHUB_SHA"], "branch": os.environ["BRANCH"]}
+          with open("app/Resources/BuildInfo.json", "w", encoding="utf-8") as handle:
+              json.dump(info, handle, indent=2)
+          print(info)
+          EOF
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -83,42 +111,76 @@ jobs:
           set -euo pipefail
           plutil -p build/Payload/Shortlist.app/Info.plist | grep -E 'CFBundle(Identifier|ShortVersionString|Version)|MinimumOSVersion'
           codesign -dv build/Payload/Shortlist.app 2>&1 | grep -E 'Identifier|Signature'
+          cat build/Payload/Shortlist.app/BuildInfo.json
           if [ -e build/Payload/Shortlist.app/embedded.mobileprovision ]; then
             echo "A provisioning profile must not be shipped in the public build" >&2
             exit 1
           fi
           ls -lh build/Shortlist.ipa
 
+      - name: Write SideStore source
+        env:
+          CHANNEL: ${{ steps.channel.outputs.channel }}
+        run: |
+          python3 scripts/make_source.py \
+            --app build/Payload/Shortlist.app \
+            --ipa build/Shortlist.ipa \
+            --entitlements app/Shortlist.entitlements \
+            --channel "$CHANNEL" \
+            --download-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$CHANNEL-build/Shortlist.ipa" \
+            --icon-url "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$GITHUB_SHA/assets/icon.png" \
+            --out build/source.json
+
       - uses: actions/upload-artifact@v7
         with:
-          name: Shortlist-ipa
-          path: build/Shortlist.ipa
+          name: Shortlist-${{ steps.channel.outputs.channel }}
+          path: |
+            build/Shortlist.ipa
+            build/source.json
           if-no-files-found: error
 
   release:
-    name: Publish latest build
-    # Keeps one rolling release so the phone can install from a fixed URL:
-    # https://github.com/<owner>/<repo>/releases/download/latest-build/Shortlist.ipa
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    name: Publish ${{ needs.ipa.outputs.channel }} build
     needs: ipa
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    # One publish per channel at a time, so two branches cannot interleave.
+    concurrency:
+      group: release-${{ needs.ipa.outputs.channel }}
+      cancel-in-progress: false
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: Shortlist-ipa
+          name: Shortlist-${{ needs.ipa.outputs.channel }}
           path: dist
 
       - name: Replace rolling release
         env:
           GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ needs.ipa.outputs.channel }}
+          BRANCH: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          gh release delete latest-build --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
-          gh release create latest-build dist/Shortlist.ipa \
+          tag="$CHANNEL-build"
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$tag"
+          cat > notes.md <<EOF
+          Unsigned **$CHANNEL** build #$GITHUB_RUN_NUMBER from branch \`$BRANCH\`, commit $GITHUB_SHA.
+          SideStore signs it on the phone.
+
+          Add this channel to SideStore once (paste into Safari on the iPhone):
+
+              sidestore://source?url=$base/source.json
+
+          Or install this build directly:
+
+              sidestore://install?url=$base/Shortlist.ipa
+          EOF
+          sed -i 's/^          //' notes.md
+          gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create "$tag" dist/Shortlist.ipa dist/source.json \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Latest build (#$GITHUB_RUN_NUMBER)" \
-            --notes "Unsigned build from commit $GITHUB_SHA. Install with a sideloading tool; it is signed on the device." \
+            --title "$CHANNEL build #$GITHUB_RUN_NUMBER ($BRANCH)" \
+            --notes-file notes.md \
             --prerelease

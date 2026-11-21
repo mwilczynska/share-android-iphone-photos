@@ -27,6 +27,7 @@ enum LaunchLog {
 /// becomes active, because a refresh replaces the provisioning profile.
 struct InstallStatus {
     let profile: ProvisioningProfile?
+    let build: BuildInfo
     let firstOpened: Date?
     let openCount: Int
     let appVersion: String
@@ -38,6 +39,7 @@ struct InstallStatus {
         let os = ProcessInfo.processInfo.operatingSystemVersion
         return InstallStatus(
             profile: embeddedProfile(in: bundle),
+            build: buildInfo(in: bundle),
             firstOpened: LaunchLog.firstOpened(),
             openCount: LaunchLog.openCount(),
             appVersion: bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?",
@@ -45,6 +47,16 @@ struct InstallStatus {
             bundleIdentifier: bundle.bundleIdentifier ?? "?",
             systemVersion: "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"
         )
+    }
+
+    /// Falls back to the local description if the bundled file is missing or malformed.
+    private static func buildInfo(in bundle: Bundle) -> BuildInfo {
+        guard
+            let url = bundle.url(forResource: "BuildInfo", withExtension: "json"),
+            let data = try? Data(contentsOf: url),
+            let info = BuildInfo(jsonData: data)
+        else { return .local }
+        return info
     }
 
     /// Absent in the Simulator and in unsigned builds.
