@@ -1,0 +1,56 @@
+# XcodeGen definition. The .xcodeproj is generated from this file and is not committed:
+#   xcodegen generate --spec app/project.yml
+name: Shortlist
+
+options:
+  deploymentTarget:
+    # Kept low for the Phase 0 install test so it runs whatever iOS version the phone has.
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+# Base.xcconfig optionally includes Local.xcconfig, which is gitignored and only
+# needed for signed builds from Xcode on a Mac. CI builds unsigned and needs neither.
+configFiles:
+  Debug: Config/Base.xcconfig
+  Release: Config/Base.xcconfig
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+
+packages:
+  ShortlistCore:
+    path: ../ShortlistCore
+
+targets:
+  Shortlist:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+    dependencies:
+      - package: ShortlistCore
+        product: ShortlistCore
+    settings:
+      base:
+        PRODUCT_NAME: Shortlist
+        PRODUCT_BUNDLE_IDENTIFIER: dev.shortlist.app
+        MARKETING_VERSION: "0.0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Shortlist
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+
+schemes:
+  Shortlist:
+    build:
+      targets:
+        Shortlist: all
+    run:
+      config: Debug
+    archive:
+      config: Release
