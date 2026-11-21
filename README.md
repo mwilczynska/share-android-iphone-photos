@@ -15,8 +15,18 @@ OneDrive and the other uses an iPhone, a Mac and iCloud.
 | --- | --- |
 | `app/` | iOS app sources and the XcodeGen project definition |
 | `ShortlistCore/` | Platform-independent Swift package with unit tests |
-| `scripts/` | Test scripts that run on Windows |
-| `.github/workflows/` | Build that compiles the app without signing it |
+| `scripts/` | Windows test and download scripts, and the SideStore source generator |
+| `assets/` | Icon used by the SideStore source |
+| `.github/workflows/` | Build that compiles the app without signing it and publishes `test` and `latest` builds |
+
+## Local checks
+
+```powershell
+swift test --package-path ShortlistCore
+python -m unittest discover -s scripts
+```
+
+The iOS app itself only builds on macOS; GitHub's build compiles it on every push.
 
 This repository is public. Account identifiers, links, signing material, photos and anything derived from them stay
 out of it; see the privacy section of the app plan and `.gitignore`.

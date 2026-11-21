@@ -28,6 +28,8 @@ targets:
     platform: iOS
     sources:
       - Sources
+      # Bundled as resources. CI overwrites BuildInfo.json before generating the project.
+      - Resources
     dependencies:
       - package: ShortlistCore
         product: ShortlistCore
